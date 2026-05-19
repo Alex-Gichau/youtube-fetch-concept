@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 const API_KEY = process.env.YOUTUBE_API_KEY;
 const YT_BASE = 'https://www.googleapis.com/youtube/v3';
 

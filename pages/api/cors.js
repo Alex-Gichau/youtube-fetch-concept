@@ -1,9 +1,7 @@
-import NextCors from 'nextjs-cors';
-
 export default async function handler(req, res) {
-  await NextCors(req, res, {
-    methods: ['GET', 'POST', 'OPTIONS'],
-    origin: '*',
-  });
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
   res.status(200).json({ ok: true });
 }
