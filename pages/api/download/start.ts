@@ -9,7 +9,7 @@ import { fetchPlaylist } from '../../../lib/youtube';
 
 type ResponseData =
   | { error: string }
-  | { jobId: string; status: string };
+  | { jobId: string; status: string; count?: number };
 
 function getText(value: string | string[] | undefined): string | undefined {
   return typeof value === 'string' ? value.trim() : undefined;
@@ -31,32 +31,40 @@ export default async function handler(
   const url = getText(body.url as string);
   const playlistId = getText(body.playlistId as string);
 
+  // Optional cap on how many playlist items a batch job should download.
+  const requestedLimit = Number(body.limit);
+  const limit =
+    Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(Math.floor(requestedLimit), 500)
+      : undefined;
+
   try {
     if (playlistId) {
       // Batch mode: resolve the playlist, then download every item into a ZIP.
       const playlist = await fetchPlaylist(playlistId, { limit: 5000 });
-      const items = (playlist.videos ?? []).map((video) => ({
+      const allItems = (playlist.videos ?? []).map((video) => ({
         id: video.id,
         title: video.title,
       }));
+      const items = limit ? allItems.slice(0, limit) : allItems;
 
       if (!items.length) throw new Error('That playlist has no videos to download.');
 
-      const job = startDownloadJob({
+      const job = await startDownloadJob({
         playlistId,
         playlistItems: items,
         title: playlist.title || title,
         format,
       });
 
-      return res.status(202).json({ jobId: job.id, status: job.phase });
+      return res.status(202).json({ jobId: job.id, status: job.phase, count: items.length });
     }
 
     if (!videoId && !url) {
       return res.status(400).json({ error: 'Video ID or URL is required' });
     }
 
-    const job = startDownloadJob({ videoId, url, title, format });
+    const job = await startDownloadJob({ videoId, url, title, format });
 
     return res.status(202).json({ jobId: job.id, status: job.phase });
   } catch (error) {

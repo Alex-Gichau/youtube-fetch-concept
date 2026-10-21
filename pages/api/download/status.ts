@@ -7,7 +7,7 @@ import { getDownloadJob } from '../../../lib/download-jobs';
 
 type ResponseData = { error: string } | Record<string, unknown>;
 
-export default function handler(
+export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<ResponseData>
 ) {
@@ -22,7 +22,7 @@ export default function handler(
     return res.status(400).json({ error: 'jobId is required' });
   }
 
-  const job = getDownloadJob(jobId);
+  const job = await getDownloadJob(jobId);
 
   if (!job) {
     return res.status(404).json({ error: 'That download job is no longer available.' });

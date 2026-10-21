@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import Head from 'next/head';
 import { isSearchInput, normalizeSearchQuery } from '../lib/search-utils.js';
+import {
+  cancelDownload,
+  formatBytes,
+  isCancelledError,
+  phaseLabel,
+  runDownload,
+} from '../lib/download-client.js';
 
 export default function Home() {
   const [url, setUrl] = useState('');
@@ -9,28 +16,100 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const triggerDownload = (params) => {
-    const query = new URLSearchParams(params).toString();
-    window.location.href = `/api/download?${query}`;
+  // Per-download state keyed by `${videoId}:${format}`.
+  const [downloads, setDownloads] = useState({});
+
+  const updateDownload = (key, patch) => {
+    setDownloads((current) => ({
+      ...current,
+      [key]: { ...current[key], ...patch },
+    }));
   };
 
-  const handleBulkDownload = (format) => {
+  const handleSingleDownload = async (video, format) => {
+    const key = `${video.id}:${format}`;
+
+    updateDownload(key, { phase: 'queued', percent: 0, message: 'Starting…', error: '' });
+
+    try {
+      await runDownload({
+        payload: {
+          videoId: video.id,
+          title: video.title,
+          format,
+        },
+        onUpdate: (status) => updateDownload(key, status),
+        onJobId: (jobId) => updateDownload(key, { jobId }),
+      });
+    } catch (err) {
+      if (isCancelledError(err)) {
+        updateDownload(key, {
+          phase: 'cancelled',
+          error: '',
+          message: 'Cancelled',
+        });
+        return;
+      }
+
+      updateDownload(key, {
+        phase: 'error',
+        error: err.message || 'The download failed',
+        message: 'Failed',
+      });
+    }
+  };
+
+  const handleBulkDownload = async (format) => {
     if (!playlist?.playlistId) return;
-    triggerDownload({
-      playlistId: playlist.playlistId,
-      title: playlist.title,
-      format,
-      mode: 'batch',
-    });
+
+    const key = `playlist:${format}`;
+
+    updateDownload(key, { phase: 'queued', percent: 0, message: 'Starting…', error: '' });
+
+    try {
+      await runDownload({
+        payload: {
+          playlistId: playlist.playlistId,
+          title: playlist.title,
+          format,
+        },
+        onUpdate: (status) => updateDownload(key, status),
+        onJobId: (jobId) => updateDownload(key, { jobId }),
+      });
+    } catch (err) {
+      if (isCancelledError(err)) {
+        updateDownload(key, {
+          phase: 'cancelled',
+          error: '',
+          message: 'Cancelled',
+        });
+        return;
+      }
+
+      updateDownload(key, {
+        phase: 'error',
+        error: err.message || 'The download failed',
+        message: 'Failed',
+      });
+    }
   };
 
-  const handleSingleDownload = (video, format) => {
-    triggerDownload({
-      videoId: video.id,
-      title: video.title,
-      format,
-      mode: 'single',
-    });
+  const handleCancel = async (key) => {
+    const jobId = downloads[key]?.jobId;
+    if (!jobId) return;
+
+    updateDownload(key, { phase: 'cancelled', message: 'Cancelling…' });
+
+    try {
+      await cancelDownload(jobId);
+    } catch (err) {
+      // The job may have finished on its own while we were cancelling.
+      updateDownload(key, {
+        phase: 'error',
+        error: err.message || 'Could not cancel the download',
+        message: 'Failed',
+      });
+    }
   };
 
   const handleFetch = async (e) => {
@@ -137,12 +216,78 @@ export default function Home() {
 
             {!playlist.isSearch && (
               <div className="bulk-actions">
-                <button type="button" onClick={() => handleBulkDownload('audio')}>
-                  Download all audio
-                </button>
-                <button type="button" onClick={() => handleBulkDownload('video')}>
-                  Download all video
-                </button>
+                {['audio', 'video'].map((format) => {
+                  const state = downloads[`playlist:${format}`];
+                  const running =
+                    state &&
+                    state.phase !== 'ready' &&
+                    state.phase !== 'error' &&
+                    state.phase !== 'cancelled';
+                  const failed = state?.phase === 'error';
+
+                  return (
+                    <button
+                      type="button"
+                      key={format}
+                      onClick={() => handleBulkDownload(format)}
+                      disabled={Boolean(running)}
+                    >
+                      {failed ? `Retry all ${format}` : `Download all ${format}`}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {!playlist.isSearch && (downloads['playlist:audio'] || downloads['playlist:video']) && (
+              <div className="bulk-progress">
+                {['audio', 'video'].map((format) => {
+                  const state = downloads[`playlist:${format}`];
+                  if (!state) return null;
+
+                  const running =
+                    state.phase !== 'ready' &&
+                    state.phase !== 'error' &&
+                    state.phase !== 'cancelled';
+
+                  return (
+                    <div
+                      className={`progress-block${state.phase === 'error' ? ' is-error' : ''}`}
+                      key={format}
+                    >
+                      <div className="progress-line">
+                        <strong>{format === 'audio' ? 'All audio' : 'All video'}</strong>
+                        <span>{phaseLabel(state.phase)}</span>
+                        {running && <span>{state.percent}%</span>}
+                        {running && (
+                          <button
+                            type="button"
+                            className="cancel-button"
+                            onClick={() => handleCancel(`playlist:${format}`)}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                      {state.error ? (
+                        <p className="progress-error">{state.error}</p>
+                      ) : (
+                        <>
+                          <div className="progress-track">
+                            <div
+                              className="progress-fill"
+                              style={{ width: `${state.percent || 0}%` }}
+                            />
+                          </div>
+                          <p className="progress-note">
+                            {state.message}
+                            {state.bytes ? ` · ${formatBytes(state.bytes)}` : ''}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -185,12 +330,84 @@ export default function Home() {
                 </div>
 
                 <div className="song-actions">
-                  <button type="button" onClick={() => handleSingleDownload(video, 'audio')}>
-                    Download audio
-                  </button>
-                  <button type="button" onClick={() => handleSingleDownload(video, 'video')}>
-                    Download video
-                  </button>
+                  {['audio', 'video'].map((format) => {
+                    const state = downloads[`${video.id}:${format}`];
+                    const running =
+                      state &&
+                      state.phase !== 'ready' &&
+                      state.phase !== 'error' &&
+                      state.phase !== 'cancelled';
+                    const failed = state?.phase === 'error';
+
+                    return (
+                      <button
+                        type="button"
+                        key={format}
+                        onClick={() => handleSingleDownload(video, format)}
+                        disabled={Boolean(running)}
+                      >
+                        {failed
+                          ? `Retry ${format}`
+                          : `Download ${format}`}
+                      </button>
+                    );
+                  })}
+
+                  {['audio', 'video'].map((format) => {
+                    const state = downloads[`${video.id}:${format}`];
+                    if (!state) return null;
+
+                    const running =
+                      state.phase !== 'ready' &&
+                      state.phase !== 'error' &&
+                      state.phase !== 'cancelled';
+
+                    return (
+                      <div
+                        className={`row-progress${state.phase === 'error' ? ' is-error' : ''}`}
+                        key={format}
+                      >
+                        <div className="row-progress-head">
+                          <span>{format === 'audio' ? 'Audio' : 'Video'}</span>
+                          <span>
+                            {state.phase === 'error'
+                              ? 'Failed'
+                              : state.phase === 'cancelled'
+                                ? 'Cancelled'
+                                : state.phase === 'ready'
+                                  ? 'Saved'
+                                  : `${phaseLabel(state.phase)}${
+                                      state.phase === 'downloading' ? ` ${state.percent}%` : ''
+                                    }`}
+                          </span>
+                          {running && (
+                            <button
+                              type="button"
+                              className="cancel-button"
+                              onClick={() => handleCancel(`${video.id}:${format}`)}
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                        {state.error ? (
+                          <p className="progress-error">{state.error}</p>
+                        ) : (
+                          <>
+                            <div className="progress-track">
+                              <div
+                                className="progress-fill"
+                                style={{ width: `${state.percent || 0}%` }}
+                              />
+                            </div>
+                            {state.bytes ? (
+                              <p className="progress-note">{formatBytes(state.bytes)}</p>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </article>
             ))}
