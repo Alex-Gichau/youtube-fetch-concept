@@ -1,111 +1,177 @@
 import { useState } from 'react';
+import Head from 'next/head';
 
 export default function Home() {
   const [url, setUrl] = useState('');
-  const [results, setResults] = useState([]);
+  const [playlist, setPlaylist] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const triggerDownload = (params) => {
+    const query = new URLSearchParams(params).toString();
+    window.location.href = `/api/download?${query}`;
+  };
+
+  const handleBulkDownload = (format) => {
+    if (!playlist?.playlistId) return;
+    triggerDownload({
+      playlistId: playlist.playlistId,
+      title: playlist.title,
+      format,
+      mode: 'batch',
+    });
+  };
+
+  const handleSingleDownload = (video, format) => {
+    triggerDownload({
+      videoId: video.id,
+      title: video.title,
+      format,
+      mode: 'single',
+    });
+  };
 
   const handleFetch = async (e) => {
     e.preventDefault();
     if (!url.trim()) {
-      setError('Please enter a URL');
+      setError('Please enter a YouTube playlist URL');
       return;
     }
 
     setLoading(true);
     setError('');
-    setResults([]);
+    setPlaylist(null);
 
     try {
-      // Fetch without API key - using web scraping or alternative method
-      const response = await fetch('/api/fetch-youtube', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      });
+      const response = await fetch(`/api/playlist?url=${encodeURIComponent(url.trim())}`);
+      const data = await response.json();
 
       if (!response.ok) {
-        throw new Error('Failed to fetch data');
+        throw new Error(data.error || 'Failed to fetch the playlist');
       }
 
-      const data = await response.json();
-      setResults(data.items || []);
+      setPlaylist(data);
     } catch (err) {
-      setError(err.message || 'An error occurred');
+      setError(err.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
   };
 
+  const videos = playlist?.videos ?? [];
+
   return (
-    <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
-      <h1>YouTube URL/Playlist Fetcher</h1>
-      
-      <form onSubmit={handleFetch} style={{ marginBottom: '20px' }}>
-        <input
-          type="text"
-          placeholder="Enter YouTube URL or Playlist URL"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '10px',
-            fontSize: '16px',
-            borderRadius: '4px',
-            border: '1px solid #ccc',
-            marginBottom: '10px',
-            boxSizing: 'border-box',
-          }}
+    <>
+      <Head>
+        <title>YouTube Playlist Fetcher</title>
+        <meta
+          name="description"
+          content="Paste a YouTube playlist link and get every video as a song row."
         />
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            padding: '10px 20px',
-            fontSize: '16px',
-            backgroundColor: '#FF0000',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.6 : 1,
-          }}
-        >
-          {loading ? 'Fetching...' : 'Fetch'}
-        </button>
-      </form>
+      </Head>
 
-      {error && (
-        <div style={{ color: 'red', marginBottom: '10px' }}>
-          Error: {error}
-        </div>
-      )}
+      <main className="container">
+        <header className="masthead">
+          <h1>YouTube Playlist Fetcher</h1>
+          <p>Paste a playlist link and every item shows up as a song row.</p>
+        </header>
 
-      {results.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
-          <thead>
-            <tr style={{ backgroundColor: '#f0f0f0' }}>
-              <th style={{ border: '1px solid #ddd', padding: '10px', textAlign: 'left' }}>Title</th>
-              <th style={{ border: '1px solid #ddd', padding: '10px', textAlign: 'left' }}>Duration</th>
-              <th style={{ border: '1px solid #ddd', padding: '10px', textAlign: 'left' }}>URL</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((item, index) => (
-              <tr key={index}>
-                <td style={{ border: '1px solid #ddd', padding: '10px' }}>{item.title}</td>
-                <td style={{ border: '1px solid #ddd', padding: '10px' }}>{item.duration}</td>
-                <td style={{ border: '1px solid #ddd', padding: '10px' }}>
-                  <a href={item.url} target="_blank" rel="noopener noreferrer">
-                    Open
+        <form className="search-form" onSubmit={handleFetch}>
+          <input
+            type="text"
+            placeholder="https://www.youtube.com/playlist?list=PL..."
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            aria-label="YouTube playlist URL"
+          />
+          <button type="submit" disabled={loading}>
+            {loading ? 'Fetching…' : 'Fetch'}
+          </button>
+        </form>
+
+        {error && (
+          <div className="status status-error" role="alert">
+            {error}
+          </div>
+        )}
+
+        {loading && <div className="status status-loading">Loading playlist items…</div>}
+
+        {playlist && !loading && (
+          <div className="summary">
+            <h2>{playlist.title}</h2>
+            <span>
+              {playlist.videoCountLabel ||
+                `${playlist.videoCount} ${playlist.videoCount === 1 ? 'video' : 'videos'}`}
+              {playlist.channel ? ` · ${playlist.channel}` : ''}
+            </span>
+
+            <div className="bulk-actions">
+              <button type="button" onClick={() => handleBulkDownload('audio')}>
+                Download all audio
+              </button>
+              <button type="button" onClick={() => handleBulkDownload('video')}>
+                Download all video
+              </button>
+            </div>
+          </div>
+        )}
+
+        {videos.length > 0 && (
+          <div className="song-list" role="list">
+            {videos.map((video) => (
+              <article className="song-row" key={video.id} role="listitem">
+                <a
+                  className="song-thumb"
+                  href={video.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open ${video.title}`}
+                >
+                  <img src={video.thumbnail} alt={video.title} loading="lazy" />
+                  {video.duration && <span className="song-duration">{video.duration}</span>}
+                </a>
+
+                <div className="song-main">
+                  <a
+                    className="song-title"
+                    href={video.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {video.title}
                   </a>
-                </td>
-              </tr>
+
+                  <div className="song-meta-row">
+                    {video.channelAvatar && <img className="song-avatar" src={video.channelAvatar} alt="" />}
+                    <span>{video.channel}</span>
+                  </div>
+
+                  <div className="song-meta">
+                    {video.views && <span>{video.views} views</span>}
+                    {video.publishedAt && <span>{video.publishedAt}</span>}
+                  </div>
+                </div>
+
+                <div className="song-actions">
+                  <button type="button" onClick={() => handleSingleDownload(video, 'audio')}>
+                    Download audio
+                  </button>
+                  <button type="button" onClick={() => handleSingleDownload(video, 'video')}>
+                    Download video
+                  </button>
+                </div>
+              </article>
             ))}
-          </tbody>
-        </table>
-      )}
-    </div>
+          </div>
+        )}
+
+        {playlist && !loading && videos.length === 0 && (
+          <div className="empty">
+            That playlist returned no videos. It may be empty, private, or unavailable.
+          </div>
+        )}
+      </main>
+    </>
   );
 }
