@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import Head from 'next/head';
+import { isSearchInput, normalizeSearchQuery } from '../lib/search-utils.js';
 
 export default function Home() {
   const [url, setUrl] = useState('');
+  const [mode, setMode] = useState('search');
   const [playlist, setPlaylist] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -33,8 +35,10 @@ export default function Home() {
 
   const handleFetch = async (e) => {
     e.preventDefault();
-    if (!url.trim()) {
-      setError('Please enter a YouTube playlist URL');
+    const trimmed = normalizeSearchQuery(url);
+
+    if (!trimmed) {
+      setError(mode === 'search' ? 'Please enter a YouTube video or artist name' : 'Please enter a YouTube playlist URL');
       return;
     }
 
@@ -43,7 +47,9 @@ export default function Home() {
     setPlaylist(null);
 
     try {
-      const response = await fetch(`/api/playlist?url=${encodeURIComponent(url.trim())}`);
+      const endpoint = mode === 'search' || isSearchInput(trimmed) ? '/api/search' : '/api/playlist';
+      const queryKey = endpoint === '/api/search' ? 'query' : 'url';
+      const response = await fetch(`${endpoint}?${queryKey}=${encodeURIComponent(trimmed)}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -77,16 +83,39 @@ export default function Home() {
         </header>
 
         <form className="search-form" onSubmit={handleFetch}>
-          <input
-            type="text"
-            placeholder="https://www.youtube.com/playlist?list=PL..."
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            aria-label="YouTube playlist URL"
-          />
-          <button type="submit" disabled={loading}>
-            {loading ? 'Fetching…' : 'Fetch'}
-          </button>
+          <div className="mode-toggle" role="tablist" aria-label="Fetch mode">
+            <button
+              type="button"
+              className={mode === 'playlist' ? 'active' : ''}
+              onClick={() => setMode('playlist')}
+            >
+              Playlist URL
+            </button>
+            <button
+              type="button"
+              className={mode === 'search' ? 'active' : ''}
+              onClick={() => setMode('search')}
+            >
+              Search by name
+            </button>
+          </div>
+
+          <div className="search-controls">
+            <input
+              type="text"
+              placeholder={
+                mode === 'search'
+                  ? 'Search YouTube by song, artist, or video title'
+                  : 'https://www.youtube.com/playlist?list=PL...'
+              }
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              aria-label={mode === 'search' ? 'YouTube search query' : 'YouTube playlist URL'}
+            />
+            <button type="submit" disabled={loading}>
+              {loading ? 'Fetching…' : 'Fetch'}
+            </button>
+          </div>
         </form>
 
         {error && (
@@ -106,14 +135,16 @@ export default function Home() {
               {playlist.channel ? ` · ${playlist.channel}` : ''}
             </span>
 
-            <div className="bulk-actions">
-              <button type="button" onClick={() => handleBulkDownload('audio')}>
-                Download all audio
-              </button>
-              <button type="button" onClick={() => handleBulkDownload('video')}>
-                Download all video
-              </button>
-            </div>
+            {!playlist.isSearch && (
+              <div className="bulk-actions">
+                <button type="button" onClick={() => handleBulkDownload('audio')}>
+                  Download all audio
+                </button>
+                <button type="button" onClick={() => handleBulkDownload('video')}>
+                  Download all video
+                </button>
+              </div>
+            )}
           </div>
         )}
 

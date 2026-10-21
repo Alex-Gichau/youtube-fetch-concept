@@ -36,6 +36,8 @@ export interface PlaylistResult {
   videoCountLabel?: string;
   /** True for YouTube's auto-generated "mix" (RD…) playlists. */
   isMix?: boolean;
+  /** True when the result list came from a keyword search rather than a playlist ID. */
+  isSearch?: boolean;
   videos: PlaylistVideo[];
 }
 
@@ -391,6 +393,67 @@ async function fetchMixPlaylist(
  * Fetch every item of a YouTube playlist.
  * Uses the public playlist page + continuation endpoint, so no API key is needed.
  */
+export async function fetchSearchResults(
+  query: string,
+  options: FetchOptions = {}
+): Promise<PlaylistResult> {
+  const { limit = 20, signal } = options;
+  const rawQuery = (query || '').trim();
+
+  if (!rawQuery) {
+    throw new Error('Search query is required');
+  }
+
+  const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(rawQuery)}&hl=en`;
+  const pageRes = await fetch(searchUrl, { headers: BASE_HEADERS, signal });
+
+  if (!pageRes.ok) {
+    throw new Error(`YouTube returned ${pageRes.status} for that search`);
+  }
+
+  const html = await pageRes.text();
+  const initialData = extractJsonAfter(html, 'ytInitialData');
+
+  if (!initialData) {
+    throw new Error('Could not read search results from YouTube (the page structure may have changed)');
+  }
+
+  const items = extractItems(initialData).filter((item) => {
+    if (item.contentType && item.contentType !== 'LOCKUP_CONTENT_TYPE_VIDEO') return false;
+    return Boolean(item.id && item.title);
+  });
+
+  const seen = new Set<string>();
+  const videos: PlaylistVideo[] = [];
+
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    videos.push({
+      id: item.id,
+      title: item.title,
+      channel: item.channel,
+      channelAvatar: item.channelAvatar,
+      duration: item.duration,
+      views: item.views,
+      publishedAt: item.publishedAt,
+      thumbnail: item.thumbnail || `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`,
+      url: `https://www.youtube.com/watch?v=${item.id}`,
+    });
+
+    if (videos.length >= limit) break;
+  }
+
+  return {
+    playlistId: `search:${encodeURIComponent(rawQuery)}`,
+    title: `Search: ${rawQuery}`,
+    videoCount: videos.length,
+    videoCountLabel: `${videos.length} videos`,
+    isSearch: true,
+    videos,
+  };
+}
+
 export async function fetchPlaylist(
   playlistId: string,
   options: FetchOptions = {}
