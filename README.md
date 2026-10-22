@@ -139,6 +139,33 @@ YouTube also blocks some public videos for yt-dlp's default player client
 alternate player clients (`android`, `ios`, `tv`, `web_safari`) before giving
 up.
 
+## Responsive layout
+
+The page is built mobile-first and adapts in `styles/globals.css`:
+
+| Width | Layout |
+|---|---|
+| > 900px | Three columns: 180px thumbnail · title · 190px action stack |
+| ≤ 900px | Tracks shrink to 148px / 168px so the title keeps a readable column |
+| ≤ 720px | Actions move under the title and span the full row; buttons sit side by side |
+| ≤ 560px | Compact list: a 120px poster beside the title, 44px touch targets |
+| ≤ 380px | Poster shrinks to 96px and the type scales down |
+
+Other details worth knowing:
+
+- The thumbnail is always 16:9, either from a fixed height or from
+  `padding-bottom: 56.25%` on phones (a percentage height would collapse).
+- The two fixed grid tracks live in the `--thumb-w` / `--actions-w` custom
+  properties on `.song-row`, so a breakpoint only overrides two numbers.
+- `@media (pointer: coarse)` raises hit areas to 44px on touch devices, and
+  `@media (prefers-reduced-motion: reduce)` disables the hover lift and the
+  progress-bar transition.
+- The container respects `env(safe-area-inset-*)` so notched phones do not clip
+  content.
+
+At 360px a song row is about 158px tall instead of the 407px it used to be
+when the thumbnail spanned the full width.
+
 ## Tests
 
 ```bash

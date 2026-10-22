@@ -23,12 +23,16 @@ body {
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* Stop iOS from inflating text in landscape, which breaks the row layout. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 40px 20px 64px;
+  /* Respect the notch on notched phones. */
+  padding: clamp(20px, 4vw, 40px) max(clamp(14px, 3vw, 20px), env(safe-area-inset-left)) clamp(48px, 6vw, 64px);
 }
 
 /* ---------- Header ---------- */
@@ -40,14 +44,14 @@ body {
 
 .masthead h1 {
   margin: 0 0 8px;
-  font-size: 30px;
+  font-size: clamp(22px, 4.5vw, 30px);
   letter-spacing: -0.02em;
 }
 
 .masthead p {
   margin: 0;
   color: var(--muted);
-  font-size: 15px;
+  font-size: clamp(13.5px, 2.4vw, 15px);
 }
 
 /* ---------- Search form ---------- */
@@ -166,7 +170,8 @@ body {
 
 .summary h2 {
   margin: 0 0 4px;
-  font-size: 20px;
+  font-size: clamp(17px, 3vw, 20px);
+  overflow-wrap: anywhere;
 }
 
 .summary span {
@@ -183,7 +188,7 @@ body {
 }
 
 .bulk-actions button,
-.card-actions button {
+.song-actions > button {
   appearance: none;
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -197,9 +202,15 @@ body {
 }
 
 .bulk-actions button:hover,
-.card-actions button:hover {
+.song-actions > button:hover {
   border-color: var(--accent);
   transform: translateY(-1px);
+}
+
+.song-actions > button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* ---------- Card grid ---------- */
@@ -213,8 +224,14 @@ body {
 }
 
 .song-row {
+  /* The two fixed tracks are the only things that need to change per
+     breakpoint, so they live in variables. */
+  --thumb-w: 180px;
+  --actions-w: 190px;
+
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr) auto;
+  grid-template-columns: var(--thumb-w) minmax(0, 1fr) var(--actions-w);
+  grid-template-areas: 'thumb main actions';
   gap: 16px;
   align-items: center;
   padding: 12px 14px;
@@ -230,16 +247,22 @@ body {
 }
 
 .song-thumb {
+  grid-area: thumb;
   position: relative;
   display: block;
-  width: 180px;
-  height: 101px;
+  width: var(--thumb-w);
+  /* 16:9 keeps every thumbnail in the same proportion as YouTube's. */
+  height: calc(var(--thumb-w) * 0.5625);
   background: var(--surface-2);
   border-radius: 10px;
   overflow: hidden;
 }
 
 .song-thumb img {
+  /* Absolute so the 16:9 box can be built from padding on narrow screens,
+     where a percentage height would collapse. */
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -259,17 +282,20 @@ body {
 }
 
 .song-main {
+  grid-area: main;
   min-width: 0;
 }
 
 .song-title {
   display: block;
   margin: 0 0 8px;
-  font-size: 16px;
+  font-size: clamp(14.5px, 2.6vw, 16px);
   font-weight: 600;
   line-height: 1.35;
   color: var(--text);
   text-decoration: none;
+  /* Long titles wrap instead of stretching the grid column. */
+  overflow-wrap: anywhere;
 }
 
 .song-title:hover {
@@ -307,10 +333,17 @@ body {
 }
 
 .song-actions {
+  grid-area: actions;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 190px;
+  width: var(--actions-w);
+  min-width: 0;
+}
+
+.song-actions > button {
+  /* Comfortable touch target on phones without making the desktop row tall. */
+  min-height: 34px;
 }
 
 /* ---------- Download progress ---------- */
@@ -334,6 +367,8 @@ body {
   justify-content: space-between;
   gap: 8px;
   color: var(--muted);
+  /* On narrow screens the phase, percent and Cancel button need room. */
+  flex-wrap: wrap;
 }
 
 .row-progress-head span:first-child,
@@ -412,22 +447,184 @@ body {
   color: var(--muted);
 }
 
-@media (max-width: 640px) {
+/* ---------- Responsive ---------- */
+
+/* Medium screens (tablets, small laptops): shrink the fixed tracks so the
+   title keeps a readable column instead of being squeezed. */
+@media (max-width: 900px) {
+  .song-row {
+    --thumb-w: 148px;
+    --actions-w: 168px;
+    gap: 12px;
+  }
+
+  .song-actions > button {
+    padding: 8px 10px;
+    font-size: 12.5px;
+  }
+
+  .search-form,
+  .status,
+  .summary {
+    max-width: 100%;
+  }
+}
+
+/* Below this the three tracks no longer fit, so the actions move under the
+   title and the row becomes a two-track grid. */
+@media (max-width: 720px) {
+  .song-row {
+    --thumb-w: 120px;
+    --actions-w: 100%;
+    grid-template-columns: var(--thumb-w) minmax(0, 1fr);
+    grid-template-areas:
+      'thumb main'
+      'actions actions';
+    align-items: start;
+  }
+
+  .cancel-button {
+    min-height: 32px;
+    padding: 6px 12px;
+  }
+
+  .song-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    width: 100%;
+  }
+
+  .song-actions > button {
+    flex: 1 1 auto;
+    min-height: 40px;
+  }
+
+  /* The progress block spans the full row underneath the buttons. */
+  .song-actions .row-progress {
+    flex: 1 1 100%;
+  }
+}
+
+/* Phones: a compact list. The thumbnail stays beside the title (a small
+   poster, not a full-width hero image) so far more rows fit on screen. */
+@media (max-width: 560px) {
   .search-controls {
     flex-direction: column;
   }
 
-  .song-row {
-    grid-template-columns: 1fr;
-    padding: 12px;
+  .search-form button[type='submit'] {
+    width: 100%;
+    padding: 12px 16px;
   }
 
-  .song-thumb {
-    width: 100%;
-    height: 180px;
+  .song-row {
+    --thumb-w: 120px;
+    grid-template-columns: var(--thumb-w) minmax(0, 1fr);
+    grid-template-areas:
+      'thumb main'
+      'actions actions';
+    gap: 10px 12px;
+    padding: 10px;
   }
 
   .song-actions {
-    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .song-actions > button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 10px;
+    font-size: 12.5px;
+  }
+
+  .song-actions .row-progress {
+    flex: 1 1 100%;
+  }
+
+  /* Make Cancel a real touch target, even when the browser reports a
+     fine pointer (e.g. a desktop browser narrowed to phone width). */
+  .cancel-button {
+    min-height: 32px;
+    padding: 6px 12px;
+  }
+
+  /* Tighten the metadata so a phone row stays compact. */
+  .song-title {
+    margin-bottom: 4px;
+  }
+
+  .song-meta-row {
+    margin-bottom: 4px;
+  }
+
+  .song-avatar {
+    width: 20px;
+    height: 20px;
+  }
+
+  .bulk-actions {
+    gap: 10px;
+  }
+
+  .bulk-actions button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .empty {
+    padding: 36px 12px;
+  }
+}
+
+/* Very small phones: shrink the poster a little more so the title keeps a
+   usable column. */
+@media (max-width: 380px) {
+  .song-row {
+    --thumb-w: 96px;
+  }
+
+  .song-title {
+    font-size: 14px;
+  }
+
+  .mode-toggle button {
+    padding: 8px 12px;
+    font-size: 12.5px;
+  }
+}
+
+/* Coarse pointers (phones, tablets) need bigger hit areas. */
+@media (pointer: coarse) {
+  .song-actions > button,
+  .bulk-actions button {
+    min-height: 44px;
+  }
+
+  .cancel-button {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+}
+
+/* Respect a user's reduced-motion preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .song-row:hover,
+  .bulk-actions button:hover,
+  .song-actions > button:hover {
+    transform: none;
   }
 }
