@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
 import { isSearchInput, normalizeSearchQuery } from '../lib/search-utils.js';
 import {
@@ -30,9 +30,13 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Pagination. The page size is never below 10.
+  // Infinite scroll: how many rows we've revealed so far. Rows per page is
+  // still the step size; the sentinel at the bottom loads the next batch.
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [selected, setSelected] = useState(new Set());
+  const [visibleCount, setVisibleCount] = useState(DEFAULT_PAGE_SIZE);
+  const sentinelRef = useRef(null);
 
   // Per-download state keyed by `${videoId}:${format}`.
   const [downloads, setDownloads] = useState({});
@@ -42,6 +46,35 @@ export default function Home() {
       ...current,
       [key]: { ...current[key], ...patch },
     }));
+  };
+
+  const toggleSelect = (id) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllOnPage = () => {
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const video of current.items) next.add(video.id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelected(new Set());
+
+  const handleSelectedDownload = async (format) => {
+    if (!selected.size) return;
+
+    const chosen = videos.filter((video) => selected.has(video.id));
+
+    for (const video of chosen) {
+      handleSingleDownload(video, format);
+    }
   };
 
   const handleSingleDownload = async (video, format) => {
@@ -143,6 +176,7 @@ export default function Home() {
     setError('');
     setPlaylist(null);
     setPage(1);
+    setVisibleCount(pageSize);
 
     try {
       const endpoint = mode === 'search' || isSearchInput(trimmed) ? '/api/search' : '/api/playlist';
@@ -164,16 +198,41 @@ export default function Home() {
 
   const videos = playlist?.videos ?? [];
 
-  // The visible slice of rows for the current page.
+  // The visible slice of rows for the current page. With infinite scroll we
+  // reveal `visibleCount` rows at once, growing it as the user scrolls.
   const current = useMemo(
-    () => paginate(videos, page, pageSize),
-    [videos, page, pageSize]
+    () => paginate(videos, 1, visibleCount),
+    [videos, visibleCount]
   );
 
   const pageNumbers = useMemo(
     () => buildPageList(current.page, current.pageCount),
     [current.page, current.pageCount]
   );
+
+  // Infinite scroll: when the sentinel near the bottom of the list comes into
+  // view, reveal the next page-sized batch of rows.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setVisibleCount((count) => {
+              if (count >= videos.length) return count;
+              return Math.min(count + pageSize, videos.length);
+            });
+          }
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [videos.length, pageSize]);
 
   const handlePageChange = (nextPage) => {
     setPage(nextPage);
@@ -191,8 +250,8 @@ export default function Home() {
 
   const handlePageSizeChange = (nextSize) => {
     setPageSize(nextSize);
-    // Keep the first row of the current page visible where possible.
     setPage(1);
+    setVisibleCount(nextSize);
   };
 
   return (
@@ -418,9 +477,43 @@ export default function Home() {
 
         {videos.length > 0 && (
           <>
+            <nav className="pagination pagination-top" aria-label="Pagination (top)">
+              <PaginationControls />
+            </nav>
+
+            <div className="bulk-actions selection-actions">
+              <span className="selection-count">
+                {selected.size
+                  ? `${selected.size} selected`
+                  : 'Select songs to download them as a batch'}
+              </span>
+              <button type="button" onClick={selectAllOnPage}>Select page</button>
+              <button type="button" onClick={clearSelection} disabled={!selected.size}>
+                Clear
+              </button>
+              {['audio', 'video'].map((format) => (
+                <button
+                  type="button"
+                  key={format}
+                  onClick={() => handleSelectedDownload(format)}
+                  disabled={!selected.size}
+                >
+                  Download selected {format}
+                </button>
+              ))}
+            </div>
+
             <div className="song-list" role="list" id="song-list-top">
               {current.items.map((video) => (
               <article className="song-row" key={video.id} role="listitem">
+                <label className="song-select">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(video.id)}
+                    onChange={() => toggleSelect(video.id)}
+                    aria-label={`Select ${video.title}`}
+                  />
+                </label>
                 <a
                   className="song-thumb"
                   href={video.url}
@@ -536,6 +629,8 @@ export default function Home() {
               </article>
             ))}
             </div>
+
+            <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />
 
             {/*
               The nav stays visible even when everything fits on one page, so

@@ -515,6 +515,16 @@
 			"command": "node --test lib/batch-utils.test.js lib/download-utils.test.js lib/search-utils.test.js lib/download-client.test.js lib/pagination-utils.test.js > E:/temp/verify.txt 2>&1 & node -e \"fetch('http://localhost:3119/').then(r=>console.log('server',r.status)).catch(e=>console.log('server ERR',e.message))\" > E:/temp/srv.txt 2>&1 & echo done",
 			"args": [],
 			"isBackground": false
+		},
+		{
+			"label": "Typecheck",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"node_modules/typescript/bin/tsc",
+				"--noEmit"
+			],
+			"isBackground": false
 		}
 	]
 }
