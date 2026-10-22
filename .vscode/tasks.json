@@ -1,0 +1,520 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run unit tests",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"--test",
+				"lib/batch-utils.test.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Typecheck",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"node_modules/typescript/bin/tsc",
+				"--noEmit"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "All unit tests",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"--test"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Production build",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"node_modules/next/dist/bin/next",
+				"build"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Production server",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"node_modules/next/dist/bin/next",
+				"start",
+				"-p",
+				"3119"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "Batch flow E2E",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-batch-flow.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Batch items E2E",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-batch-items.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Batch items E2E to file",
+			"type": "shell",
+			"command": "cmd /c node",
+			"args": [
+				"scripts/test-batch-items.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Batch items E2E log",
+			"type": "shell",
+			"command": "node scripts/test-batch-items.js > E:/temp/batch-items.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Rebuild after progress fix",
+			"type": "shell",
+			"command": "node node_modules/next/dist/bin/next build > E:/temp/build.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Batch items E2E round 2",
+			"type": "shell",
+			"command": "node scripts/test-batch-items.js > E:/temp/batch-items2.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Stop old server",
+			"type": "shell",
+			"command": "for /f \"tokens=5\" %p in ('netstat -ano | findstr :3119 | findstr LISTENING') do taskkill /F /PID %p",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Stop server on 3119",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/stop-port.js",
+				"3119"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Production server 3119",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"node_modules/next/dist/bin/next",
+				"start",
+				"-p",
+				"3119"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "Batch items E2E round 2",
+			"type": "shell",
+			"command": "node scripts/test-batch-items.js > E:/temp/batch-items2.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Batch items E2E retry",
+			"type": "shell",
+			"command": "node scripts/test-batch-items.js > E:/temp/batch-items2.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Check server alive",
+			"type": "shell",
+			"command": "node -e \"fetch('http://localhost:3119/api/download/status?jobId=nope').then(r=>r.text()).then(t=>console.log('OK',t)).catch(e=>console.log('ERR',e.message))\"",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Batch items E2E fresh file",
+			"type": "shell",
+			"command": "node scripts/test-batch-items.js > E:/temp/batch-run-3.txt 2>&1 & echo started",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Tail batch log",
+			"type": "shell",
+			"command": "node scripts/tail-log.js E:/temp/batch-run-3.txt 60 > E:/temp/batch-tail.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Batch items E2E final",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-batch-items.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Stop server and rebuild",
+			"type": "shell",
+			"command": "node scripts/stop-port.js 3119 > E:/temp/stop.txt 2>&1 & node node_modules/next/dist/bin/next build > E:/temp/build2.txt 2>&1 & echo done",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Production server 3119",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"node_modules/next/dist/bin/next",
+				"start",
+				"-p",
+				"3119"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "Check server up",
+			"type": "shell",
+			"command": "node -e \"fetch('http://localhost:3119/').then(r=>console.log('OK',r.status)).catch(e=>console.log('ERR',e.message))\"",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Start server 3119",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"node_modules/next/dist/bin/next",
+				"start",
+				"-p",
+				"3119"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "Get playlist items",
+			"type": "shell",
+			"command": "node -e \"fetch('http://localhost:3119/api/playlist?url='+encodeURIComponent('https://www.youtube.com/watch?v=dUVs5Ocou8I&list=RDdUVs5Ocou8I')).then(r=>r.json()).then(d=>console.log(JSON.stringify((d.videos||[]).slice(0,5).map(v=>v.id+' | '+v.title.slice(0,40))))).catch(e=>console.log('ERR',e.message))\" > E:/temp/pl.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Batch skipped states",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-batch-skipped.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Batch skipped states to file",
+			"type": "shell",
+			"command": "node scripts/test-batch-skipped.js > E:/temp/skip.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Tail skip log",
+			"type": "shell",
+			"command": "node scripts/tail-log.js E:/temp/skip.txt 40 > E:/temp/skip-tail.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Poll job status",
+			"type": "shell",
+			"command": "node -e \"fetch('http://localhost:3119/api/download/status?jobId=mviza62o-ifps5mq6').then(r=>r.json()).then(d=>{const c={};(d.items||[]).forEach(i=>c[i.state]=(c[i.state]||0)+1);console.log('phase',d.phase,'pct',d.percent,'msg',d.message);console.log('counts',JSON.stringify(c));(d.items||[]).forEach(i=>console.log(' ',i.state.padEnd(12),String(i.percent).padStart(3)+'%',i.title.slice(0,42),i.error?('['+i.error.slice(0,44)+']'):''));})\" > E:/temp/st.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Poll job status after wait",
+			"type": "shell",
+			"command": "node -e \"setTimeout(()=>fetch('http://localhost:3119/api/download/status?jobId=mviza62o-ifps5mq6').then(r=>r.json()).then(d=>{const c={};(d.items||[]).forEach(i=>c[i.state]=(c[i.state]||0)+1);console.log('phase',d.phase,'pct',d.percent,'msg',d.message);console.log('counts',JSON.stringify(c));(d.items||[]).forEach(i=>console.log(' ',i.state.padEnd(12),String(i.percent).padStart(3)+'%',i.title.slice(0,40),i.error?('['+i.error.slice(0,50)+']'):''));}),120000)\" > E:/temp/st2.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Unit tests",
+			"type": "shell",
+			"command": "node --test lib/batch-utils.test.js lib/download-utils.test.js lib/search-utils.test.js lib/download-client.test.js lib/pagination-utils.test.js > E:/temp/tests.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Final build",
+			"type": "shell",
+			"command": "node scripts/stop-port.js 3119 > E:/temp/stop2.txt 2>&1 & node node_modules/next/dist/bin/next build > E:/temp/build3.txt 2>&1 & echo done",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Server 3119 final",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"node_modules/next/dist/bin/next",
+				"start",
+				"-p",
+				"3119"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "Final batch E2E",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-batch-items.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "List jobs dir",
+			"type": "shell",
+			"command": "node -e \"const fs=require('fs'),os=require('os'),path=require('path');const d=path.join(os.tmpdir(),'youtube-fetch-concept','jobs');console.log(fs.readdirSync(d).join('\\n'))\" > E:/temp/jobs.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Rebuild with atomic writes",
+			"type": "shell",
+			"command": "node scripts/stop-port.js 3119 > E:/temp/stop3.txt 2>&1 & node node_modules/next/dist/bin/next build > E:/temp/build4.txt 2>&1 & echo done",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Server 3119 atomic",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"node_modules/next/dist/bin/next",
+				"start",
+				"-p",
+				"3119"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "Batch E2E atomic run 1",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-batch-items.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Verify job survived",
+			"type": "shell",
+			"command": "node -e \"setTimeout(()=>fetch('http://localhost:3119/api/download/status?jobId=mviznqce-nuy80q4q').then(r=>r.json()).then(d=>{console.log('HTTP-OK phase',d.phase||d.error,'pct',d.percent,'msg',d.message);const c={};(d.items||[]).forEach(i=>c[i.state]=(c[i.state]||0)+1);console.log('counts',JSON.stringify(c));}),60000)\" > E:/temp/atomic1.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Inspect jobs dir again",
+			"type": "shell",
+			"command": "node -e \"const fs=require('fs'),os=require('os'),path=require('path');const d=path.join(os.tmpdir(),'youtube-fetch-concept','jobs');const f=fs.readdirSync(d);console.log('count',f.length);console.log(f.filter(x=>x.includes('mviznqce')).join('\\n'));console.log('---all---');console.log(f.join('\\n'))\" > E:/temp/jobs2.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "List node processes",
+			"type": "shell",
+			"command": "node -e \"const {execSync}=require('child_process');const o=execSync('wmic process where \\\"name=\\'node.exe\\'\\\" get ProcessId,CommandLine',{encoding:'utf8'});console.log(o.split(/\\r?\\n/).filter(l=>l.includes('next')||l.includes('ProcessId')).join('\\n'))\" > E:/temp/procs.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "List all node processes",
+			"type": "shell",
+			"command": "node -e \"const {execSync}=require('child_process');const o=execSync('wmic process get ProcessId,CommandLine',{encoding:'utf8'});console.log(o.split(/\\r?\\n/).filter(l=>/next|node\\.exe/i.test(l)).join('\\n'))\" > E:/temp/procs.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "List servers",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/list-servers.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Inspect job states",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/inspect-jobs.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Probe atomic writes",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-atomic-write.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Rebuild with retry",
+			"type": "shell",
+			"command": "node scripts/stop-port.js 3119 > E:/temp/stop4.txt 2>&1 & node node_modules/next/dist/bin/next build > E:/temp/build5.txt 2>&1 & echo done",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Server 3119 v2",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"node_modules/next/dist/bin/next",
+				"start",
+				"-p",
+				"3119"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "Start monitored job",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/start-monitored.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Monitor job",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/monitor-job.js",
+				"mvizyuea-v1ilmle7",
+				"75"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Monitor job to completion",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/monitor-job.js",
+				"mvizyuea-v1ilmle7",
+				"40"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Batch E2E with fix",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-batch-items.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Monitor batch job",
+			"type": "shell",
+			"command": "node scripts/monitor-job.js mvj01ysz-rltu62wx 100 > E:/temp/mon.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Check final job state",
+			"type": "shell",
+			"command": "node -e \"fetch('http://localhost:3119/api/download/status?jobId=mvj01ysz-rltu62wx').then(r=>r.json()).then(d=>{console.log('phase',d.phase,'file',d.fileName,'bytes',d.bytes);console.log('items',JSON.stringify((d.items||[]).map(i=>i.state+' '+i.percent+'%')));})\" > E:/temp/final.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Remove temporary probe scripts",
+			"type": "shell",
+			"command": "node -e \"const fs=require('fs');['test-atomic-write.js','list-servers.js','inspect-jobs.js','start-monitored.js','monitor-job.js','test-batch-skipped.js'].forEach(f=>{const p='scripts/'+f;if(fs.existsSync(p)){fs.unlinkSync(p);console.log('removed',f);}});\" > E:/temp/cleanup.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Typecheck and tests",
+			"type": "shell",
+			"command": "node node_modules/typescript/bin/tsc --noEmit > E:/temp/tsc.txt 2>&1 & node --test lib/batch-utils.test.js lib/download-utils.test.js lib/search-utils.test.js lib/download-client.test.js lib/pagination-utils.test.js > E:/temp/final-tests.txt 2>&1 & echo started",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Final production build",
+			"type": "shell",
+			"command": "node scripts/stop-port.js 3119 > E:/temp/stop5.txt 2>&1 & node node_modules/next/dist/bin/next build > E:/temp/build-final.txt 2>&1 & echo done",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Server final",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"node_modules/next/dist/bin/next",
+				"start",
+				"-p",
+				"3119"
+			],
+			"isBackground": true
+		},
+		{
+			"label": "Final E2E batch",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"scripts/test-batch-items.js"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Final job status check",
+			"type": "shell",
+			"command": "node -e \"setTimeout(()=>fetch('http://localhost:3119/api/download/status?jobId=mvj0d5jt-yik2o06z').then(r=>r.json()).then(d=>{console.log('phase',d.phase||d.error,'file',d.fileName,'bytes',d.bytes);console.log('items',JSON.stringify((d.items||[]).map(i=>i.state+' '+i.percent+'%')));}),75000)\" > E:/temp/fin2.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "List downloaded zips",
+			"type": "shell",
+			"command": "node -e \"const fs=require('fs');const d='E:/temp/job-downloads';fs.readdirSync(d).map(f=>{const s=fs.statSync(d+'/'+f);const b=fs.readFileSync(d+'/'+f).slice(0,2).toString('hex');return f+' '+(s.size/1048576).toFixed(1)+'MB magic='+b;}).forEach(l=>console.log(l))\" > E:/temp/dls.txt 2>&1",
+			"args": [],
+			"isBackground": false
+		},
+		{
+			"label": "Final verification",
+			"type": "shell",
+			"command": "node --test lib/batch-utils.test.js lib/download-utils.test.js lib/search-utils.test.js lib/download-client.test.js lib/pagination-utils.test.js > E:/temp/verify.txt 2>&1 & node -e \"fetch('http://localhost:3119/').then(r=>console.log('server',r.status)).catch(e=>console.log('server ERR',e.message))\" > E:/temp/srv.txt 2>&1 & echo done",
+			"args": [],
+			"isBackground": false
+		}
+	]
+}

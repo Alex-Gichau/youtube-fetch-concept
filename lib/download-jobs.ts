@@ -39,6 +39,26 @@ export type JobPhase =
   | 'error'
   | 'cancelled';
 
+/**
+ * The state of one song inside a batch job.
+ *
+ * A batch can cover hundreds of songs, so the UI needs to know which one is
+ * running right now, which ones are already finished and which ones could not
+ * be downloaded at all.
+ */
+export type BatchItemState = 'pending' | 'downloading' | 'processing' | 'done' | 'skipped';
+
+export interface BatchItemStatus {
+  id: string;
+  title: string;
+  state: BatchItemState;
+  /** 0-100 for this song on its own. */
+  percent: number;
+  bytes?: number;
+  /** Why this song was skipped, when it failed. */
+  error?: string;
+}
+
 export interface JobStatus {
   id: string;
   phase: JobPhase;
@@ -50,6 +70,8 @@ export interface JobStatus {
   filePath?: string;
   bytes?: number;
   error?: string;
+  /** One entry per song, for batch jobs. */
+  items?: BatchItemStatus[];
   createdAt: number;
   updatedAt: number;
 }
@@ -68,6 +90,9 @@ export interface StartJobInput {
 const FILE_TTL_MS = 10 * 60 * 1000;
 const JOB_TTL_MS = 30 * 60 * 1000;
 const MAX_CONCURRENT_JOBS = 4;
+
+/** How often the per-song list of a batch job is written to disk. */
+const ITEMS_WRITE_INTERVAL_MS = 400;
 
 const AUDIO_EXTENSIONS = ['mp3', 'm4a', 'opus', 'wav'];
 const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mkv', 'm4v'];
@@ -154,22 +179,134 @@ function statePath(jobId: string): string {
   return path.join(os.tmpdir(), 'youtube-fetch-concept', 'jobs', `${jobId}.json`);
 }
 
-async function writeState(job: JobStatus): Promise<void> {
-  await fs.mkdir(path.dirname(statePath(job.id)), { recursive: true });
-  await fs.writeFile(statePath(job.id), JSON.stringify(job), 'utf8');
+/**
+ * The per-song list of a batch job lives in its own file.
+ *
+ * A batch can be hundreds of songs long, and the list only changes while a
+ * song is running. Keeping it out of the main state file means the status
+ * route stays cheap to poll and the progress updates stay small.
+ */
+function itemsPath(jobId: string): string {
+  return path.join(os.tmpdir(), 'youtube-fetch-concept', 'jobs', `${jobId}.items.json`);
 }
 
-async function readState(jobId: string): Promise<JobStatus | null> {
+/**
+ * Every write to the jobs directory goes through this queue.
+ *
+ * `touch()` is fired from yt-dlp's event handler without being awaited, so two
+ * writes can be in flight at the same time. Writing the same file twice at
+ * once can interleave and leave a half-written JSON file behind.
+ */
+let writeQueue: Promise<void> = Promise.resolve();
+
+function enqueueWrite(task: () => Promise<void>): Promise<void> {
+  const next = writeQueue.then(task, task);
+  writeQueue = next.catch(() => undefined);
+  return next;
+}
+
+/**
+ * Write a file so a reader never sees a half-written version.
+ *
+ * `fs.writeFile` truncates the target first and fills it afterwards, so a
+ * status poll that lands in that window reads an empty or partial file. The
+ * parse then fails and the status route answers 404 for a job that is very
+ * much alive. Writing to a temporary file and renaming it over the target
+ * avoids this: the rename is atomic, so a reader sees either the old file or
+ * the new one, never a broken one.
+ *
+ * Windows refuses to rename over a file that somebody else has open
+ * (`EPERM`), and the status route reads the state file constantly. The
+ * rename is therefore retried for a moment — the reader only holds the file
+ * for microseconds — and falls back to a direct write if it still fails.
+ */
+async function renameWithRetry(temp: string, target: string): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      await fs.rename(temp, target);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+
+      if (code !== 'EPERM' && code !== 'EBUSY' && code !== 'EACCES') throw error;
+
+      await new Promise((resolve) => setTimeout(resolve, 5 * (attempt + 1)));
+    }
+  }
+
+  // The reader is holding on longer than expected. Write straight to the
+  // target instead — a reader may catch a partial file, but that is far
+  // better than losing the update entirely.
+  await fs.writeFile(target, await fs.readFile(temp, 'utf8'), 'utf8');
+  await fs.rm(temp, { force: true }).catch(() => undefined);
+}
+
+async function writeJsonAtomic(target: string, payload: string): Promise<void> {
+  const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
+
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(temp, payload, 'utf8');
+
   try {
-    const raw = await fs.readFile(statePath(jobId), 'utf8');
-    return JSON.parse(raw) as JobStatus;
+    await renameWithRetry(temp, target);
+  } catch (error) {
+    await fs.rm(temp, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function writeState(job: JobStatus): Promise<void> {
+  const payload = JSON.stringify(job);
+  const target = statePath(job.id);
+
+  await enqueueWrite(() => writeJsonAtomic(target, payload));
+}
+
+async function writeItems(jobId: string, items: BatchItemStatus[]): Promise<void> {
+  const payload = JSON.stringify(items);
+  const target = itemsPath(jobId);
+
+  await enqueueWrite(() => writeJsonAtomic(target, payload));
+}
+
+async function readItems(jobId: string): Promise<BatchItemStatus[] | null> {
+  try {
+    const raw = await fs.readFile(itemsPath(jobId), 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as BatchItemStatus[]) : null;
   } catch {
     return null;
   }
 }
 
+async function readState(jobId: string): Promise<JobStatus | null> {
+  const target = statePath(jobId);
+
+  // The state is written atomically, so a parse failure should not happen.
+  // It still gets a couple of retries, because a "job not found" answer for a
+  // job that is running would be a confusing lie.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const raw = await fs.readFile(target, 'utf8');
+      return JSON.parse(raw) as JobStatus;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+
+      // A missing file is a real answer; anything else is worth retrying.
+      if (code === 'ENOENT') return null;
+
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  return null;
+}
+
 async function removeState(jobId: string): Promise<void> {
-  await fs.rm(statePath(jobId), { force: true }).catch(() => undefined);
+  await enqueueWrite(async () => {
+    await fs.rm(statePath(jobId), { force: true }).catch(() => undefined);
+    await fs.rm(itemsPath(jobId), { force: true }).catch(() => undefined);
+  });
   await removeJobFiles(jobId);
 }
 
@@ -209,6 +346,8 @@ async function sweep(): Promise<void> {
 
   for (const entry of entries) {
     if (!entry.endsWith('.json')) continue;
+    // The per-song list of a batch job lives in a sibling file.
+    if (entry.endsWith('.items.json')) continue;
 
     const jobId = entry.slice(0, -'.json'.length);
     const state = await readState(jobId);
@@ -418,18 +557,22 @@ async function runYtDlp(
   url: string,
   outputTemplate: string,
   format: DownloadFormat,
-  onEvent?: (event: YtDlpEvent) => void
+  onEvent?: (event: YtDlpEvent) => void,
+  label?: string
 ): Promise<void> {
   let lastError: Error | null = null;
 
   for (const strategy of PLAYER_CLIENT_STRATEGIES) {
+    const prefix = label ? `${label} — ` : '';
     await touch(job, {
       phase: 'resolving',
-      percent: 0,
+      // The overall percentage must not jump back to zero when the next song
+      // of a batch starts — that would make the bar move backwards.
+      percent: job.percent,
       message:
         strategy.label === 'default'
-          ? 'Resolving video formats…'
-          : `Resolving video formats (retry via ${strategy.label})…`,
+          ? `${prefix}Resolving video formats…`
+          : `${prefix}Resolving video formats (retry via ${strategy.label})…`,
     });
 
     try {
@@ -534,6 +677,53 @@ async function runSingle(job: JobStatus, input: StartJobInput): Promise<void> {
   });
 }
 
+/**
+ * Keeps the per-song list of a batch job up to date.
+ *
+ * The list is written to its own file so the main state file stays small no
+ * matter how many songs the playlist holds. Progress events arrive many times
+ * per second, so writes are throttled; a state change (a song finishing, being
+ * skipped, or the next one starting) is always written straight away.
+ */
+class BatchTracker {
+  private readonly jobId: string;
+  private readonly items: BatchItemStatus[];
+  private lastWrite = 0;
+
+  constructor(jobId: string, items: BatchItemStatus[]) {
+    this.jobId = jobId;
+    this.items = items;
+  }
+
+  /** The live list. The UI receives a copy of this. */
+  get list(): BatchItemStatus[] {
+    return this.items;
+  }
+
+  /** Update one song and publish the list. */
+  update(index: number, patch: Partial<BatchItemStatus>, immediate = false): void {
+    const item = this.items[index];
+    if (!item) return;
+
+    Object.assign(item, patch);
+    this.publish(immediate);
+  }
+
+  /** Write the list to disk now. */
+  async flush(): Promise<void> {
+    this.lastWrite = Date.now();
+    await writeItems(this.jobId, this.items);
+  }
+
+  private publish(immediate: boolean): void {
+    const now = Date.now();
+    if (!immediate && now - this.lastWrite < ITEMS_WRITE_INTERVAL_MS) return;
+
+    this.lastWrite = now;
+    void writeItems(this.jobId, this.items);
+  }
+}
+
 async function runBatch(job: JobStatus, input: StartJobInput): Promise<void> {
   const AdmZip = require('adm-zip');
   const items = input.playlistItems ?? [];
@@ -545,6 +735,20 @@ async function runBatch(job: JobStatus, input: StartJobInput): Promise<void> {
   const archivePath = path.join(dir, zipName);
   const produced: string[] = [];
   const failures: string[] = [];
+
+  // Every song of the playlist starts out as pending, so the UI can show the
+  // full queue right away.
+  const tracker = new BatchTracker(
+    job.id,
+    items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      state: 'pending' as const,
+      percent: 0,
+    }))
+  );
+
+  await tracker.flush();
 
   try {
     for (let index = 0; index < items.length; index += 1) {
@@ -561,7 +765,13 @@ async function runBatch(job: JobStatus, input: StartJobInput): Promise<void> {
       const outputTemplate = path.join(itemDir, `${stem}.%(ext)s`);
 
       // Overall progress = completed items + the current item's progress.
-      const base = (index / items.length) * 100;
+      // The bar must never move backwards, so every phase of this item stays
+      // inside the slice of the bar that belongs to it.
+      const span = 100 / items.length;
+      const base = index * span;
+      const label = `${index + 1} of ${items.length}: ${item.title}`;
+
+      tracker.update(index, { state: 'downloading', percent: 0, error: undefined }, true);
 
       try {
         await runYtDlp(
@@ -573,38 +783,57 @@ async function runBatch(job: JobStatus, input: StartJobInput): Promise<void> {
             if (event.type === 'progress') {
               const overall = Math.min(
                 99,
-                Math.round(base + (event.percent / 100) * (100 / items.length))
+                Math.round(base + (event.percent / 100) * span)
               );
+              tracker.update(index, { percent: event.percent, bytes: event.bytes });
               void touch(job, {
                 phase: 'downloading',
                 percent: overall,
                 bytes: event.bytes,
-                message: `Downloading ${index + 1} of ${items.length}: ${item.title}`,
+                message: `Downloading ${label}`,
               });
             } else {
+              tracker.update(index, { state: 'processing', percent: 100 });
               void touch(job, {
                 phase: 'processing',
-                percent: 99,
-                message: `Converting ${index + 1} of ${items.length}: ${item.title}`,
+                // Converting counts as almost done, but the slot is only
+                // closed once the song has actually been produced.
+                percent: Math.min(99, Math.round(base + span * 0.95)),
+                message: `Converting ${label}`,
               });
             }
-          }
+          },
+          label
         );
       } catch (error) {
         // One unavailable or region-blocked video must not lose the whole
         // playlist — skip it and keep going.
         const message = error instanceof Error ? error.message : 'Download failed';
         failures.push(`${item.title}: ${message}`);
+        tracker.update(index, { state: 'skipped', percent: 0, error: message }, true);
         void touch(job, {
           phase: 'downloading',
-          percent: Math.round(((index + 1) / items.length) * 100),
-          message: `Skipped ${index + 1} of ${items.length} (unavailable) — continuing…`,
+          // A skipped song closes its slice of the bar, so the bar keeps
+          // moving forward instead of jumping over the songs still to come.
+          percent: Math.min(99, Math.round(base + span)),
+          message: `Skipped ${label} (unavailable) — continuing…`,
         });
         continue;
       }
 
       const filePath = await findOutput(itemDir, input.format);
-      if (filePath) produced.push(filePath);
+
+      if (filePath) {
+        produced.push(filePath);
+        tracker.update(index, { state: 'done', percent: 100, error: undefined }, true);
+      } else {
+        failures.push(`${item.title}: no media file was produced`);
+        tracker.update(
+          index,
+          { state: 'skipped', percent: 0, error: 'No media file was produced.' },
+          true
+        );
+      }
     }
 
     if (!produced.length) {
@@ -621,6 +850,9 @@ async function runBatch(job: JobStatus, input: StartJobInput): Promise<void> {
     zip.writeZip(archivePath);
 
     const stat = await fs.stat(archivePath);
+
+    // Make sure the final list is on disk before the job is reported as ready.
+    await tracker.flush();
 
     await touch(job, {
       phase: 'ready',
@@ -748,7 +980,14 @@ export async function cancelDownloadJob(id: string): Promise<boolean> {
 
 export async function getDownloadJob(id: string): Promise<JobStatus | null> {
   await sweep();
-  return readState(id);
+  const job = await readState(id);
+  if (!job) return null;
+
+  // The per-song list is kept in its own file, so attach it on the way out.
+  const items = await readItems(id);
+  if (items) job.items = items;
+
+  return job;
 }
 
 export async function getJobFilePath(id: string): Promise<string | null> {

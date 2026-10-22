@@ -6,6 +6,7 @@
   --text: #e8eaed;
   --muted: #9aa0a6;
   --accent: #3ea6ff;
+  --success: #5fd39a;
   --danger-bg: #2a1618;
   --danger-border: #5c2a2f;
   --danger-text: #ff9aa2;
@@ -439,6 +440,189 @@ body {
   text-align: left;
 }
 
+/* ---------- Batch (playlist) song list ---------- */
+
+.batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.batch-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.batch-list-title {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.batch-list-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The song that is running right now gets its own line above the list. */
+.batch-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.batch-current-marker {
+  color: var(--accent);
+  font-size: 9px;
+  line-height: 1;
+  flex: 0 0 auto;
+  animation: batch-pulse 1.4s ease-in-out infinite;
+}
+
+.batch-current-title {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.batch-current-state {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* A soft fade so it is obvious the list continues. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  scrollbar-width: thin;
+}
+
+.batch-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.batch-item-marker {
+  flex: 0 0 14px;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.batch-item-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.batch-item-state {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A finished song is ticked off. */
+.batch-item.is-done {
+  color: var(--text);
+}
+
+.batch-item.is-done .batch-item-marker {
+  color: var(--success);
+  font-weight: 700;
+}
+
+/* A song that could not be downloaded. */
+.batch-item.is-skipped {
+  color: var(--danger-text);
+}
+
+.batch-item.is-skipped .batch-item-marker {
+  color: var(--danger-text);
+}
+
+.batch-item.is-skipped .batch-item-title {
+  text-decoration: line-through;
+  text-decoration-color: var(--danger-border);
+}
+
+/* The song being downloaded right now. */
+.batch-item.is-current {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.batch-item.is-current .batch-item-marker {
+  color: var(--accent);
+}
+
+.batch-item.is-current .batch-item-state {
+  color: var(--accent);
+}
+
+/* A song still waiting in the queue. */
+.batch-item.is-pending {
+  color: var(--muted);
+  opacity: 0.65;
+}
+
+.batch-items-more {
+  padding: 3px 6px;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+@keyframes batch-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
 .empty {
   max-width: 720px;
   margin: 0 auto;
@@ -707,6 +891,37 @@ body {
     flex: 1 1 0;
     min-width: 0;
     min-height: 44px;
+  }
+
+  /* The song list gets a shorter window on a phone, and the running song
+     keeps its own line so it is never scrolled out of sight. */
+  .batch-items {
+    max-height: 200px;
+  }
+
+  .batch-item {
+    padding: 6px;
+  }
+
+  .batch-current {
+    flex-wrap: wrap;
+  }
+
+  /* Let the title use two lines at most, so a long song name cannot push the
+     whole list off the screen. */
+  .batch-current-title {
+    white-space: normal;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-clamp: 2;
+    flex: 1 1 100%;
+    order: 2;
+  }
+
+  .batch-current-state {
+    order: 3;
   }
 
   .empty {

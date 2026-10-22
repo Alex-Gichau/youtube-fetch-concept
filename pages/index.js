@@ -14,6 +14,14 @@ import {
   PAGE_SIZE_OPTIONS,
   paginate,
 } from '../lib/pagination-utils.js';
+import {
+  batchItemMarker,
+  batchItemStateLabel,
+  batchSummary,
+  batchSummaryText,
+  currentBatchItem,
+  visibleBatchItems,
+} from '../lib/batch-utils.js';
 
 export default function Home() {
   const [url, setUrl] = useState('');
@@ -292,6 +300,17 @@ export default function Home() {
                     state.phase !== 'error' &&
                     state.phase !== 'cancelled';
 
+                  const items = state.items ?? [];
+                  const summary = batchSummary(items);
+                  const currentItem = currentBatchItem(items);
+                  const visibleItems = visibleBatchItems(items, summary.currentIndex);
+                  const firstVisible = visibleItems[0]?.position ?? 0;
+                  const lastVisible = visibleItems.length
+                    ? visibleItems[visibleItems.length - 1].position + 1
+                    : 0;
+                  const hiddenAbove = firstVisible;
+                  const hiddenBelow = summary.total - lastVisible;
+
                   return (
                     <div
                       className={`progress-block${state.phase === 'error' ? ' is-error' : ''}`}
@@ -326,6 +345,68 @@ export default function Home() {
                             {state.bytes ? ` · ${formatBytes(state.bytes)}` : ''}
                           </p>
                         </>
+                      )}
+
+                      {items.length > 0 && (
+                        <div className="batch-list">
+                          <div className="batch-list-head">
+                            <span className="batch-list-title">Songs</span>
+                            <span className="batch-list-count">
+                              {batchSummaryText(items)}
+                            </span>
+                          </div>
+
+                          {currentItem && (
+                            <p className="batch-current">
+                              <span className="batch-current-marker" aria-hidden="true">
+                                ●
+                              </span>
+                              <span className="batch-current-title">{currentItem.title}</span>
+                              <span className="batch-current-state">
+                                {batchItemStateLabel(currentItem)}
+                                {currentItem.state === 'downloading' && currentItem.percent
+                                  ? ` ${currentItem.percent}%`
+                                  : ''}
+                              </span>
+                            </p>
+                          )}
+
+                          <ol className="batch-items" aria-label="Songs in this download">
+                            {hiddenAbove > 0 && (
+                              <li className="batch-items-more">
+                                {hiddenAbove} earlier {hiddenAbove === 1 ? 'song' : 'songs'}
+                              </li>
+                            )}
+                            {visibleItems.map((item) => {
+                              const isCurrent =
+                                item.state === 'downloading' || item.state === 'processing';
+
+                              return (
+                                <li
+                                  key={item.id}
+                                  className={`batch-item is-${item.state}${
+                                    isCurrent ? ' is-current' : ''
+                                  }`}
+                                >
+                                  <span className="batch-item-marker" aria-hidden="true">
+                                    {batchItemMarker(item)}
+                                  </span>
+                                  <span className="batch-item-title">{item.title}</span>
+                                  <span className="batch-item-state">
+                                    {item.state === 'downloading' && item.percent
+                                      ? `${item.percent}%`
+                                      : batchItemStateLabel(item)}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                            {hiddenBelow > 0 && (
+                              <li className="batch-items-more">
+                                {hiddenBelow} more {hiddenBelow === 1 ? 'song' : 'songs'}
+                              </li>
+                            )}
+                          </ol>
+                        </div>
                       )}
                     </div>
                   );

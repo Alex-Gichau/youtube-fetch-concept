@@ -96,10 +96,14 @@ long request.
 POST /api/download/start           { videoId | url | playlistId, title, format, limit? }
   -> 202 { jobId, status, count? }
 
-GET  /api/download/status?jobId=   -> { phase, percent, message, bytes, fileName }
+GET  /api/download/status?jobId=   -> { phase, percent, message, bytes, fileName, items? }
 GET  /api/download/file?jobId=     -> the file, as an attachment
 POST /api/download/cancel?jobId=   -> { cancelled }
 ```
+
+`items` is only present for a batch job. It holds one entry per song:
+`{ id, title, state, percent, bytes?, error? }`, where `state` is one of
+`pending`, `downloading`, `processing`, `done` or `skipped`.
 
 `format` is `audio` (192 kbps MP3) or `video` (MP4, capped at 720p). `limit`
 caps how many playlist items a batch job downloads.
@@ -115,6 +119,45 @@ discards the partial files.
 **Playlist mode** (`playlistId` set) downloads every item into a ZIP archive.
 One unavailable video is skipped rather than failing the whole batch, and the
 final message reports how many of the total were retrieved.
+
+### The per-song list
+
+A batch can cover hundreds of songs, so a single percentage bar says very
+little about what is happening. While a batch runs, the UI shows the whole
+queue of songs and ticks them off one by one:
+
+```text
+●  Please, Just Drive Me Home"—Tired Nurse…      Downloading 24%
+✓  indie tribe - ROB HELL (Official Music Video)  Done
+✓  Hulvey, Torey D'Shaun, Alex Jean — Love Like…  Done
+○  IN CHRIST | Blessed in Christ | Ephesians 1:3   Queued
+```
+
+| Marker | Meaning |
+| --- | --- |
+| `●` | The song being downloaded or converted right now |
+| `✓` | The song finished and is in the ZIP |
+| `✕` | The song was unavailable and was skipped |
+| `○` | The song is still queued |
+
+The song that is running right now also gets its own line above the list, with
+its own percentage, so it is never scrolled out of sight.
+
+The list comes from the server: `runBatch` keeps one entry per song and
+publishes it in the job status. The per-song list is written to its own file
+(`<jobId>.items.json`) rather than into the main state file, so the status
+route stays cheap to poll no matter how long the playlist is. Progress
+updates are throttled to one write every 400 ms; a state change (a song
+finishing, being skipped, or the next one starting) is written straight away.
+
+The overall bar is **monotonic** — it never moves backwards. Each song owns a
+slice of the bar (`100 / songCount` percent) and every phase of that song
+stays inside its slice, so the bar creeps forward steadily instead of
+jumping to 99% and back to 0% at every song boundary.
+
+`lib/batch-utils.js` holds the pure helpers the UI shares with the unit
+tests: the markers, the state labels, the counts and the windowing that keeps
+a 500-song list from re-rendering in full on every poll.
 
 ### Why it is built this way
 
@@ -167,6 +210,10 @@ Other details worth knowing:
 At 360px a song row is about 158px tall instead of the 407px it used to be
 when the thumbnail spanned the full width.
 
+The batch song list follows the same ladder: the scroll window shrinks from
+260px to 200px on a phone, and the running song's title is clamped to two
+lines so a long name cannot push the list off the screen.
+
 ## Pagination
 
 The song rows are paginated. The default is **10 rows per page**, and the
@@ -189,7 +236,7 @@ strand you on it.
 ## Tests
 
 ```bash
-node --test lib/download-utils.test.js lib/search-utils.test.js lib/download-client.test.js lib/pagination-utils.test.js
+node --test lib/download-utils.test.js lib/search-utils.test.js lib/download-client.test.js lib/pagination-utils.test.js lib/batch-utils.test.js
 ```
 
 There are also end-to-end scripts in `scripts/` that drive a running server:
@@ -197,9 +244,10 @@ There are also end-to-end scripts in `scripts/` that drive a running server:
 ```bash
 npm run build && npx next start -p 3107
 
-node scripts/test-job-flow.js     # single audio + video + a failure case
-node scripts/test-batch-flow.js   # playlist -> ZIP
-node scripts/test-cancel.js        # cancel a running job
+node scripts/test-job-flow.js       # single audio + video + a failure case
+node scripts/test-batch-flow.js     # playlist -> ZIP
+node scripts/test-batch-items.js    # per-song list: states, ticks, ordering
+node scripts/test-cancel.js         # cancel a running job
 ```
 
 They read `BASE_URL` from the environment (default `http://localhost:3107`),
