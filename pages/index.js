@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Head from 'next/head';
 import { isSearchInput, normalizeSearchQuery } from '../lib/search-utils.js';
 import {
@@ -8,6 +8,12 @@ import {
   phaseLabel,
   runDownload,
 } from '../lib/download-client.js';
+import {
+  buildPageList,
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
+  paginate,
+} from '../lib/pagination-utils.js';
 
 export default function Home() {
   const [url, setUrl] = useState('');
@@ -15,6 +21,10 @@ export default function Home() {
   const [playlist, setPlaylist] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Pagination. The page size is never below 10.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   // Per-download state keyed by `${videoId}:${format}`.
   const [downloads, setDownloads] = useState({});
@@ -124,6 +134,7 @@ export default function Home() {
     setLoading(true);
     setError('');
     setPlaylist(null);
+    setPage(1);
 
     try {
       const endpoint = mode === 'search' || isSearchInput(trimmed) ? '/api/search' : '/api/playlist';
@@ -144,6 +155,37 @@ export default function Home() {
   };
 
   const videos = playlist?.videos ?? [];
+
+  // The visible slice of rows for the current page.
+  const current = useMemo(
+    () => paginate(videos, page, pageSize),
+    [videos, page, pageSize]
+  );
+
+  const pageNumbers = useMemo(
+    () => buildPageList(current.page, current.pageCount),
+    [current.page, current.pageCount]
+  );
+
+  const handlePageChange = (nextPage) => {
+    setPage(nextPage);
+    // Bring the new page into view instead of leaving the user mid-list.
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        const target = document.getElementById('song-list-top');
+        if (target) {
+          const top = target.getBoundingClientRect().top + window.scrollY - 16;
+          window.scrollTo({ top, behavior: 'smooth' });
+        }
+      });
+    }
+  };
+
+  const handlePageSizeChange = (nextSize) => {
+    setPageSize(nextSize);
+    // Keep the first row of the current page visible where possible.
+    setPage(1);
+  };
 
   return (
     <>
@@ -294,8 +336,9 @@ export default function Home() {
         )}
 
         {videos.length > 0 && (
-          <div className="song-list" role="list">
-            {videos.map((video) => (
+          <>
+            <div className="song-list" role="list" id="song-list-top">
+              {current.items.map((video) => (
               <article className="song-row" key={video.id} role="listitem">
                 <a
                   className="song-thumb"
@@ -411,7 +454,84 @@ export default function Home() {
                 </div>
               </article>
             ))}
-          </div>
+            </div>
+
+            {/*
+              The nav stays visible even when everything fits on one page, so
+              the "rows per page" selector cannot disappear and strand the
+              user on the size they just picked.
+            */}
+            <nav className="pagination" aria-label="Pagination">
+              <div className="pagination-meta">
+                <span>
+                  {current.pageCount > 1
+                    ? `Showing ${current.from}–${current.to} of ${current.total}`
+                    : `Showing all ${current.total} ${
+                        current.total === 1 ? 'video' : 'videos'
+                      }`}
+                </span>
+                <label className="pagination-size">
+                  Rows
+                  <select
+                    value={pageSize}
+                    onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                    aria-label="Rows per page"
+                  >
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {current.pageCount > 1 && (
+                <div className="pagination-controls">
+                  <button
+                    type="button"
+                    className="page-button"
+                    onClick={() => handlePageChange(current.page - 1)}
+                    disabled={!current.hasPrev}
+                    aria-label="Previous page"
+                  >
+                    Prev
+                  </button>
+
+                  {pageNumbers.map((entry, index) =>
+                    entry === '…' ? (
+                      <span className="page-gap" key={`gap-${index}`} aria-hidden="true">
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        key={entry}
+                        className={`page-button${
+                          entry === current.page ? ' is-active' : ''
+                        }`}
+                        onClick={() => handlePageChange(entry)}
+                        aria-current={entry === current.page ? 'page' : undefined}
+                        aria-label={`Page ${entry}`}
+                      >
+                        {entry}
+                      </button>
+                    )
+                  )}
+
+                  <button
+                    type="button"
+                    className="page-button"
+                    onClick={() => handlePageChange(current.page + 1)}
+                    disabled={!current.hasNext}
+                    aria-label="Next page"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </nav>
+          </>
         )}
 
         {playlist && !loading && videos.length === 0 && (

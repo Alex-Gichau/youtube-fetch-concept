@@ -29,7 +29,8 @@ lib/download-jobs.ts         Background download jobs (yt-dlp), on-disk state
 lib/download-client.js       Browser helper: start -> poll -> download
 lib/download-utils.js        Filename sanitising (shared by server and tests)
 lib/search-utils.js          Input classification (URL vs. search term)
-styles/globals.css           Dark theme, song rows, progress bars
+lib/pagination-utils.js      Page slicing + page-number strip (shared by UI and tests)
+styles/globals.css           Dark theme, song rows, progress bars, pagination
 ```
 
 ### API
@@ -144,7 +145,7 @@ up.
 The page is built mobile-first and adapts in `styles/globals.css`:
 
 | Width | Layout |
-|---|---|
+| --- | --- |
 | > 900px | Three columns: 180px thumbnail · title · 190px action stack |
 | ≤ 900px | Tracks shrink to 148px / 168px so the title keeps a readable column |
 | ≤ 720px | Actions move under the title and span the full row; buttons sit side by side |
@@ -166,10 +167,29 @@ Other details worth knowing:
 At 360px a song row is about 158px tall instead of the 407px it used to be
 when the thumbnail spanned the full width.
 
+## Pagination
+
+The song rows are paginated. The default is **10 rows per page**, and the
+"Rows" selector offers 10, 20 and 50 — never fewer than 10.
+
+Pagination is done in the browser, not on the server: `/api/playlist` and
+`/api/search` already return every item, so there is no need to ask YouTube
+for one page at a time. `lib/pagination-utils.js` holds the pure helpers
+(`paginate`, `buildPageList`) that the UI and the unit tests share.
+
+The page-number strip always shows the first and last page plus the current
+page and its neighbours, with `…` marking the gaps (e.g. `1 … 6 7 8 … 25`).
+Changing the page scrolls the list back into view, and changing the page size
+returns to page 1.
+
+The "Rows per page" selector stays visible even when everything fits on a
+single page — otherwise picking a large size would remove the control and
+strand you on it.
+
 ## Tests
 
 ```bash
-node --test lib/download-utils.test.js lib/search-utils.test.js lib/download-client.test.js
+node --test lib/download-utils.test.js lib/search-utils.test.js lib/download-client.test.js lib/pagination-utils.test.js
 ```
 
 There are also end-to-end scripts in `scripts/` that drive a running server:

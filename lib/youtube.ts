@@ -177,6 +177,19 @@ interface ParsedItem {
   contentType?: string;
 }
 
+/**
+ * Normalise a view count.
+ *
+ * YouTube is inconsistent: some rows read "1.8B" while others read "122M
+ * views". The UI appends the word "views" itself, so strip it here to avoid
+ * rendering "122M views views".
+ */
+function normalizeViews(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const cleaned = value.replace(/\s*views?\s*$/i, '').trim();
+  return cleaned || undefined;
+}
+
 /** Pull the playlist items out of a `ytInitialData`-shaped tree. */
 function extractItems(data: any): ParsedItem[] {
   const items: ParsedItem[] = [];
@@ -189,7 +202,7 @@ function extractItems(data: any): ParsedItem[] {
       const rows = meta?.metadata?.contentMetadataViewModel?.metadataRows ?? [];
 
       const channel = readText(rows[0]?.metadataParts?.[0]?.text);
-      const views = readText(rows[1]?.metadataParts?.[0]?.text);
+      const views = normalizeViews(readText(rows[1]?.metadataParts?.[0]?.text));
       const publishedAt = readText(rows[1]?.metadataParts?.[1]?.text);
 
       const overlays = lockup.contentImage?.thumbnailViewModel?.overlays ?? [];
@@ -225,7 +238,7 @@ function extractItems(data: any): ParsedItem[] {
         channel: readText(legacy.shortBylineText) ?? 'Unknown channel',
         duration: readText(legacy.lengthText),
         publishedAt: readText(legacy.publishedTimeText),
-        views: readText(legacy.viewCountText),
+        views: normalizeViews(readText(legacy.viewCountText)),
         thumbnail: thumbnails.length ? thumbnails[thumbnails.length - 1].url : '',
         contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
       });
