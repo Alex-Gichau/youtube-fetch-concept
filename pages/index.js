@@ -478,7 +478,9 @@ export default function Home() {
         {videos.length > 0 && (
           <>
             <nav className="pagination pagination-top" aria-label="Pagination (top)">
-              <PaginationControls />
+              <span className="pagination-meta">
+                Showing {current.to} of {current.total} videos
+              </span>
             </nav>
 
             <div className="bulk-actions selection-actions">
